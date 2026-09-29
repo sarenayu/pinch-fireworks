@@ -312,6 +312,10 @@ function launchBurst(x, y, explode = false, sizeBoost = 1, gesture = "pinch") {
   y = targetY;
   const lowPower = (navigator.hardwareConcurrency || 4) <= 4 || matchMedia("(max-width: 700px)").matches;
   let quality = lowPower ? .66 : .88;
+  const sceneLoad = particles.length + dust.length * .35;
+  if (sceneLoad > 1400) quality *= .48;
+  else if (sceneLoad > 950) quality *= .62;
+  else if (sceneLoad > 600) quality *= .78;
   const baseRadiusRatio = Math.random() < .2 ? .27 + Math.random() * .055 : .15 + Math.random() * .085;
   const radiusRatio = Math.min(.46, baseRadiusRatio * sizeBoost * .72);
   if (radiusRatio > .36) quality *= .62;
@@ -372,7 +376,7 @@ function launchBurst(x, y, explode = false, sizeBoost = 1, gesture = "pinch") {
       twinkle: Math.random() * Math.PI * 2,
       glitter: options.glitter ?? Math.random() > .45,
       trailMs: options.trailMs ?? 420,
-      maxHistory: options.maxHistory ?? 28,
+      maxHistory: options.maxHistory ?? 20,
       history: [{ x, y, at: now }],
       lastTrailSample: now,
       diedAt: null,
@@ -474,7 +478,7 @@ function launchBurst(x, y, explode = false, sizeBoost = 1, gesture = "pinch") {
       color: Math.random() > .25 ? palette[Math.floor(Math.random() * palette.length)] : "#fff8e8",
       born: now,
       trailMs: 260,
-      maxHistory: 14,
+      maxHistory: 10,
       history: [{ x, y, at: now }],
       lastTrailSample: now,
       diedAt: null
@@ -625,7 +629,7 @@ function animateFireworks(now) {
       return true;
     });
 
-    const updateTrail = (p, sampleInterval = 32) => {
+    const updateTrail = (p, sampleInterval = 44) => {
       if (now - p.lastTrailSample >= sampleInterval) {
         p.history.push({ x: p.x, y: p.y, at: now });
         p.lastTrailSample = now;
@@ -640,17 +644,12 @@ function animateFireworks(now) {
       fxCtx.strokeStyle = now - p.born < 115 ? "#fffdf2" : p.color;
       fxCtx.lineCap = "round";
       fxCtx.lineJoin = "round";
-      for (let i = 1; i < points.length; i++) {
-        const segmentAge = Math.max(0, now - points[i].at);
-        const segmentFade = Math.max(0, 1 - segmentAge / p.trailMs);
-        if (segmentFade <= 0) continue;
-        fxCtx.globalAlpha = alpha * segmentFade * .62;
-        fxCtx.lineWidth = p.width * widthScale * (.45 + segmentFade * .55);
-        fxCtx.beginPath();
-        fxCtx.moveTo(points[i - 1].x, points[i - 1].y);
-        fxCtx.lineTo(points[i].x, points[i].y);
-        fxCtx.stroke();
-      }
+      fxCtx.globalAlpha = alpha * .52;
+      fxCtx.lineWidth = p.width * widthScale * .82;
+      fxCtx.beginPath();
+      fxCtx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) fxCtx.lineTo(points[i].x, points[i].y);
+      fxCtx.stroke();
     };
 
     particles = particles.filter((p) => {
@@ -699,7 +698,7 @@ function animateFireworks(now) {
         p.vy = p.vy * Math.pow(p.drag, dt * 60) + p.gravity * dt;
         p.x += p.vx * dt;
         p.y += p.vy * dt;
-        updateTrail(p, 38);
+        updateTrail(p, 52);
         if (p.life <= 0) p.diedAt = now;
       }
       const tailFade = p.diedAt === null ? 1 : Math.max(0, 1 - (now - p.diedAt) / p.trailMs);
