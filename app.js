@@ -481,10 +481,6 @@ function launchBurst(x, y, explode = false, sizeBoost = 1, gesture = "pinch") {
     });
   }
 
-  // Keep rapid successive pinches smooth while preserving several layered bursts.
-  if (particles.length > 680) particles.splice(0, particles.length - 680);
-  if (dust.length > 180) dust.splice(0, dust.length - 180);
-
   lastBurstAt = now;
   return `${paletteNames[paletteIndex]} ${type}`;
 }
