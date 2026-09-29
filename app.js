@@ -372,8 +372,10 @@ function launchBurst(x, y, explode = false, sizeBoost = 1, gesture = "pinch") {
       twinkle: Math.random() * Math.PI * 2,
       glitter: options.glitter ?? Math.random() > .45,
       trailMs: options.trailMs ?? 420,
+      maxHistory: options.maxHistory ?? 28,
       history: [{ x, y, at: now }],
       lastTrailSample: now,
+      diedAt: null,
       jitter: options.jitter ?? 0
     });
   };
@@ -469,7 +471,13 @@ function launchBurst(x, y, explode = false, sizeBoost = 1, gesture = "pinch") {
       drag: .94 + Math.random() * .035,
       gravity: 28 + Math.random() * 34,
       size: .8 + Math.random() * 2.2,
-      color: Math.random() > .25 ? palette[Math.floor(Math.random() * palette.length)] : "#fff8e8"
+      color: Math.random() > .25 ? palette[Math.floor(Math.random() * palette.length)] : "#fff8e8",
+      born: now,
+      trailMs: 260,
+      maxHistory: 14,
+      history: [{ x, y, at: now }],
+      lastTrailSample: now,
+      diedAt: null
     });
   }
 
@@ -621,64 +629,94 @@ function animateFireworks(now) {
       return true;
     });
 
-    particles = particles.filter((p) => {
-      p.life -= p.decay * dt;
-      if (p.life <= 0) return false;
-      if (p.jitter) {
-        p.vx += (Math.random() - .5) * p.jitter;
-        p.vy += (Math.random() - .5) * p.jitter;
-      }
-      p.vx *= Math.pow(p.drag, dt * 60);
-      const dying = 1 - Math.min(1, p.life);
-      p.vy = p.vy * Math.pow(p.drag, dt * 60) + p.gravity * dt * (1.05 + dying * 1.7);
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      if (now - p.lastTrailSample >= 32) {
+    const updateTrail = (p, sampleInterval = 32) => {
+      if (now - p.lastTrailSample >= sampleInterval) {
         p.history.push({ x: p.x, y: p.y, at: now });
         p.lastTrailSample = now;
       }
       const trailCutoff = now - p.trailMs;
       while (p.history.length > 2 && p.history[0].at < trailCutoff) p.history.shift();
-      const flicker = .65 + Math.sin(now * .025 + p.twinkle) * .3;
-      const alpha = Math.min(1, Math.max(0, p.life)) * flicker;
-      fxCtx.globalAlpha = alpha * .62;
+      while (p.history.length > p.maxHistory) p.history.shift();
+    };
+
+    const drawTrail = (p, alpha, widthScale = 1) => {
+      const points = [...p.history, { x: p.x, y: p.y, at: now }];
       fxCtx.strokeStyle = now - p.born < 115 ? "#fffdf2" : p.color;
-      fxCtx.lineWidth = p.width * Math.max(.4, p.life) * .76;
       fxCtx.lineCap = "round";
       fxCtx.lineJoin = "round";
-      fxCtx.beginPath();
-      fxCtx.moveTo(p.history[0].x, p.history[0].y);
-      for (let i = 1; i < p.history.length; i++) fxCtx.lineTo(p.history[i].x, p.history[i].y);
-      fxCtx.lineTo(p.x, p.y);
-      fxCtx.stroke();
+      for (let i = 1; i < points.length; i++) {
+        const segmentAge = Math.max(0, now - points[i].at);
+        const segmentFade = Math.max(0, 1 - segmentAge / p.trailMs);
+        if (segmentFade <= 0) continue;
+        fxCtx.globalAlpha = alpha * segmentFade * .62;
+        fxCtx.lineWidth = p.width * widthScale * (.45 + segmentFade * .55);
+        fxCtx.beginPath();
+        fxCtx.moveTo(points[i - 1].x, points[i - 1].y);
+        fxCtx.lineTo(points[i].x, points[i].y);
+        fxCtx.stroke();
+      }
+    };
+
+    particles = particles.filter((p) => {
+      if (p.life > 0) {
+        p.life = Math.max(0, p.life - p.decay * dt);
+        if (p.jitter) {
+          p.vx += (Math.random() - .5) * p.jitter;
+          p.vy += (Math.random() - .5) * p.jitter;
+        }
+        p.vx *= Math.pow(p.drag, dt * 60);
+        const dying = 1 - Math.min(1, p.life);
+        p.vy = p.vy * Math.pow(p.drag, dt * 60) + p.gravity * dt * (1.05 + dying * 1.7);
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        updateTrail(p);
+        if (p.life <= 0) p.diedAt = now;
+      }
+      const tailFade = p.diedAt === null ? 1 : Math.max(0, 1 - (now - p.diedAt) / p.trailMs);
+      if (tailFade <= 0) return false;
+      const flicker = .65 + Math.sin(now * .025 + p.twinkle) * .3;
+      const alpha = (p.life > 0 ? Math.min(1, p.life) : tailFade) * flicker;
+      drawTrail(p, alpha, Math.max(.4, p.life) * .76);
       const brightFrom = p.history[Math.max(0, p.history.length - 3)];
-      fxCtx.globalAlpha = alpha;
-      fxCtx.lineWidth = p.width * Math.max(.5, p.life);
-      fxCtx.beginPath();
-      fxCtx.moveTo(brightFrom.x, brightFrom.y);
-      fxCtx.lineTo(p.x, p.y);
-      fxCtx.stroke();
-      if (p.glitter && Math.sin(now * .045 + p.twinkle) > .48) {
+      if (p.life > 0) {
+        fxCtx.globalAlpha = alpha;
+        fxCtx.lineWidth = p.width * Math.max(.5, p.life);
+        fxCtx.beginPath();
+        fxCtx.moveTo(brightFrom.x, brightFrom.y);
+        fxCtx.lineTo(p.x, p.y);
+        fxCtx.stroke();
+      }
+      if (p.life > 0 && p.glitter && Math.sin(now * .045 + p.twinkle) > .48) {
         fxCtx.globalAlpha = Math.min(1, alpha + .25);
         fxCtx.fillStyle = "#fffbea";
         fxCtx.beginPath();
         fxCtx.arc(p.x, p.y, Math.max(.8, p.width * .65), 0, Math.PI * 2);
         fxCtx.fill();
       }
-      return p.y < height + 30;
+      return p.y < height + 30 || p.diedAt !== null;
     });
 
     dust = dust.filter((p) => {
-      p.life -= p.decay * dt;
-      if (p.life <= 0) return false;
-      p.vx *= Math.pow(p.drag, dt * 60);
-      p.vy = p.vy * Math.pow(p.drag, dt * 60) + p.gravity * dt;
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      fxCtx.globalAlpha = p.life * .5;
-      const spriteSize = p.size * (4 + p.life * 3);
-      fxCtx.drawImage(dustSprite, p.x - spriteSize / 2, p.y - spriteSize / 2, spriteSize, spriteSize);
-      return p.y < height + 30;
+      if (p.life > 0) {
+        p.life = Math.max(0, p.life - p.decay * dt);
+        p.vx *= Math.pow(p.drag, dt * 60);
+        p.vy = p.vy * Math.pow(p.drag, dt * 60) + p.gravity * dt;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        updateTrail(p, 38);
+        if (p.life <= 0) p.diedAt = now;
+      }
+      const tailFade = p.diedAt === null ? 1 : Math.max(0, 1 - (now - p.diedAt) / p.trailMs);
+      if (tailFade <= 0) return false;
+      const alpha = (p.life > 0 ? p.life : tailFade) * .5;
+      p.width = Math.max(.65, p.size * .55);
+      drawTrail(p, alpha, .7);
+      if (p.life > 0) {
+        fxCtx.globalAlpha = alpha;
+        const spriteSize = p.size * (4 + p.life * 3);
+        fxCtx.drawImage(dustSprite, p.x - spriteSize / 2, p.y - spriteSize / 2, spriteSize, spriteSize);
+      }
+      return p.y < height + 30 || p.diedAt !== null;
     });
 
     fxCtx.globalAlpha = 1;
